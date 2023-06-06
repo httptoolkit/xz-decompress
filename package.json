@@ -1,8 +1,8 @@
 {
-  "name": "xzwasm",
+  "name": "xz-decompress",
   "version": "0.1.2",
-  "description": "XZ decompression for the browser",
-  "main": "dist/package/xzwasm.js",
+  "description": "XZ streaming decompression for the browser & Node without native code, via WebAssembly ",
+  "main": "dist/package/xz-decompress.js",
   "browser": {
     "stream/web": false
   },
@@ -12,7 +12,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SteveSanderson/xzwasm.git"
+    "url": "git+https://github.com/httptoolkit/xz-decompress.git"
   },
   "keywords": [
     "xz",
@@ -21,9 +21,9 @@
   "author": "Steven Sanderson",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/SteveSanderson/xzwasm/issues"
+    "url": "https://github.com/httptoolkit/xz-decompress/issues"
   },
-  "homepage": "https://github.com/SteveSanderson/xzwasm#readme",
+  "homepage": "https://github.com/httptoolkit/xz-decompress#readme",
   "devDependencies": {
     "webpack": "^5.85.1",
     "webpack-cli": "^5.1.3"

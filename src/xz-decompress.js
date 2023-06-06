@@ -1,4 +1,4 @@
-import xzwasmBytes from '../dist/native/xzwasm.wasm';
+import xzwasmBytes from '../dist/native/xz-decompress.wasm';
 
 const ReadableStream = globalThis.ReadableStream
     // Node < 18 support web streams, but it's not available as a global, so we need to require it.

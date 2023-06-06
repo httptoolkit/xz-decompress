@@ -1,4 +1,4 @@
-#include "xzwasm.h"
+#include "xz-decompress.h"
 
 static int has_initialized = 0;
 
