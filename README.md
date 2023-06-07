@@ -1,8 +1,8 @@
-# XZ-Decompress - Streaming XZ decompression for the browser & Node
+# XZ-Decompress - Streaming XZ decompression for the browser & Node [![Build Status](https://github.com/httptoolkit/xz-decompress/workflows/CI/badge.svg)](https://github.com/httptoolkit/xz-decompress/actions)
 
+> _Part of [HTTP Toolkit](https://httptoolkit.com): powerful tools for building, testing & debugging HTTP(S)_
 
-
-This is a Node.js & browser-compatible NPM package that can decompress XZ streams.
+This is an NPM package compatible with both Node.js & browsers that can decompress XZ streams.
 
 You can use this if you want your web server to return XZ-encoded content and have your JavaScript code see the uncompressed data (as an alternative to Gzip or Brotli), or if you want to decompress XZ files within Node.js without needing to mess with any native addons.
 
