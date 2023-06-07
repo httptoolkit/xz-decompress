@@ -14,7 +14,11 @@ module.exports = {
         path: path.resolve(__dirname, 'dist/package'),
         library: 'xzwasm',
         libraryTarget: 'umd',
+        globalObject: 'this'
     },
+    externals: [
+        'stream/web'
+    ],
     module: {
         rules: [{
             test: /\.wasm/,

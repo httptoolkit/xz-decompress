@@ -1,5 +1,10 @@
 import xzwasmBytes from '../dist/native/xzwasm.wasm';
 
+const ReadableStream = globalThis.ReadableStream
+    // Node < 18 support web streams, but it's not available as a global, so we need to require it.
+    // This won't be reached in modern browsers, and bundlers will ignore due to 'browser' field in package.json:
+    || require('stream/web').ReadableStream;
+
 const XZ_OK = 0;
 const XZ_STREAM_END = 1;
 
