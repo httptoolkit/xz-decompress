@@ -20,7 +20,7 @@ package: dist/package/xzwasm.js
 
 dist/native/xzwasm.wasm: src/native/* $(xzdir)/**/* Makefile
 	mkdir -p dist/native
-	$(wasisdkroot)/bin/clang --sysroot=$(wasisdkroot)/share/wasi-sysroot \
+	"$(wasisdkroot)/bin/clang" --sysroot="$(wasisdkroot)/share/wasi-sysroot" \
 		--target=wasm32 -DNDEBUG -Os -s -nostdlib -Wl,--no-entry \
 		-DXZ_DEC_CONCATENATED -DXZ_USE_CRC64 \
 		-Wl,--export=create_context \
