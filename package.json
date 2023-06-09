@@ -3,6 +3,7 @@
   "version": "0.1.2",
   "description": "XZ streaming decompression for the browser & Node without native code, via WebAssembly ",
   "main": "dist/package/xz-decompress.js",
+  "types": "./types.d.ts",
   "browser": {
     "stream/web": false
   },
@@ -32,6 +33,7 @@
     "node": ">=16"
   },
   "files": [
-    "dist/package/**"
+    "dist/package/**",
+    "types.d.ts"
   ]
 }
