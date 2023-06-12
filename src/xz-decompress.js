@@ -66,12 +66,10 @@ export class XzReadableStream extends ReadableStream {
     static _moduleInstancePromise;
     static _moduleInstance;
     static async _getModuleInstance() {
-        const wasmBytes = await (await fetch(xzwasmBytes)).arrayBuffer();
-        const wasmResponse = new Response(wasmBytes, { headers: { 'Content-Type': 'application/wasm' } });
+        const base64Wasm = xzwasmBytes.replace('data:application/wasm;base64,', '');
+        const wasmBytes = Uint8Array.from(atob(base64Wasm), c => c.charCodeAt(0)).buffer;
         const wasmOptions = {};
-        const module = typeof WebAssembly.instantiateStreaming === 'function'
-            ? await WebAssembly.instantiateStreaming(wasmResponse, wasmOptions)
-            : await WebAssembly.instantiate(await wasmResponse.arrayBuffer(), wasmOptions);
+        const module = await WebAssembly.instantiate(wasmBytes, wasmOptions);
         XzReadableStream._moduleInstance = module.instance;
     }
 
