@@ -19,7 +19,16 @@
     "xz",
     "wasm"
   ],
-  "author": "Steven Sanderson",
+  "author": "Tim Perry <tim@httptoolkit.com>",
+  "contributors" : [
+    {
+      "name" : "Tim Perry",
+      "email": "tim@httptoolkit.com"
+    },
+    {
+      "name" : "Steven Sanderson"
+    }
+  ],
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/httptoolkit/xz-decompress/issues"
