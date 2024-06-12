@@ -21,6 +21,7 @@ class XzContext {
     }
 
     supplyInput(sourceDataUint8Array) {
+        this._refresh();
         const inBuffer = this.mem8.subarray(this.inStart, this.inEnd);
         inBuffer.set(sourceDataUint8Array, 0);
         this.exports.supply_input(this.ptr, sourceDataUint8Array.byteLength);
