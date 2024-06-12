@@ -1,6 +1,6 @@
 {
   "name": "xz-decompress",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "XZ streaming decompression for the browser & Node without native code, via WebAssembly ",
   "main": "dist/package/xz-decompress.js",
   "types": "./types.d.ts",
