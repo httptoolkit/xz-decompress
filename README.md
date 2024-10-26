@@ -38,6 +38,16 @@ const text = await decompressedResponse.text();
 
 The API is designed to be as JavaScript-standard as possible, so `XzReadableStream` is a [`ReadableStream`](https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream) instance, which in turn means you can feed it into a [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response), and in turn get a blob, an ArrayBuffer, JSON data, or anything else that you browser can do with a `Response`.
 
+A nodejs example
+
+```js
+  const buf = readFileSync(path);
+  const decompressedResponse = new Response(
+     new XzReadableStream((new Blob([buf]).stream()))
+  );
+  return decompressedResponse.text();
+```
+
 ## What about `.tar.xz` files?
 
 Since the `.xz` format only represents one file, it's common for people to bundle up a collection of files as `.tar`, and then compress this to `.tar.xz`.
