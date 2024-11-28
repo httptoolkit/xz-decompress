@@ -36,7 +36,9 @@ const decompressedResponse = new Response(
 const text = await decompressedResponse.text();
 ```
 
-The API is designed to be as JavaScript-standard as possible, so `XzReadableStream` is a [`ReadableStream`](https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream) instance, which in turn means you can feed it into a [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response), and in turn get a blob, an ArrayBuffer, JSON data, or anything else that you browser can do with a `Response`.
+The API is designed to be as JavaScript-standard as possible, so `XzReadableStream` is a [`ReadableStream`](https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream) instance, which in turn means you can feed it into a [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response), and in turn get a blob, an ArrayBuffer, JSON data, or anything else that your runtime can do with a `Response`.
+
+If you're using this to decompress content from a file or other source, rather than an HTTP response body, you'll need to get a `ReadableStream` (a web stream) for the file's data to replace the `compressedResponse.body` stream above. For example, in Node.js you could use `Readable.toWeb(fs.createReadStream(filename))` to stream from the disk, or `new Blob([buffer]).stream()` if you already have the data in a `Buffer`.
 
 ## What about `.tar.xz` files?
 
