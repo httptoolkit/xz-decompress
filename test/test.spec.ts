@@ -47,4 +47,22 @@ describe("Streaming XS decompression", () => {
         expect(result1).to.equal('hello world\n');
         expect(result2).to.equal('hello world\n');
     });
+
+    it("can decompress many demo test streams in parallel", async () => {
+        const streams = [];
+        const promises = [];
+
+        for (let i = 0; i < 10_000; i++) {
+            const dataStream = buildStaticDataStream(Buffer.from(HELLO_WORLD_XZ, 'base64'));
+            const stream = new XzReadableStream(dataStream);
+            streams.push(stream);
+            promises.push(collectOutputString(stream));
+        }
+
+        const results = await Promise.all(promises);
+
+        for (const result of results) {
+            expect(result).to.equal('hello world\n');
+        }
+    });
 });

@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "mocha -r ts-node/register 'test/**/*.spec.ts'",
+    "setup-wasi-sdk": "wasisdkroot=wasi-sdk && wasi_version=21 && rm -rf \"${wasisdkroot}\" && mkdir -p \"${wasisdkroot}\" && curl -fL -# \"https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${wasi_version}/wasi-sdk-${wasi_version}.0-linux.tar.gz\" | tar -xzf - -C \"${wasisdkroot}\" --strip-components 1",
     "webpack": "webpack"
   },
   "repository": {

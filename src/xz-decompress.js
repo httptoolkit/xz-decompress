@@ -63,9 +63,40 @@ class XzContext {
     }
 }
 
+// Simple mutex to serialize context creation and prevent resource exhaustion
+class ContextMutex {
+    constructor() {
+        this.locked = false;
+        this.waitQueue = [];
+    }
+
+    async acquire() {
+        if (!this.locked) {
+            this.locked = true;
+            return;
+        }
+
+        // Wait in queue
+        return new Promise((resolve) => {
+            this.waitQueue.push(resolve);
+        });
+    }
+
+    release() {
+        if (this.waitQueue.length > 0) {
+            const next = this.waitQueue.shift();
+            next();
+        } else {
+            this.locked = false;
+        }
+    }
+}
+
 export class XzReadableStream extends ReadableStream {
     static _moduleInstancePromise;
     static _moduleInstance;
+    static _contextMutex = new ContextMutex();
+
     static async _getModuleInstance() {
         const base64Wasm = xzwasmBytes.replace('data:application/wasm;base64,', '');
         const wasmBytes = Uint8Array.from(atob(base64Wasm), c => c.charCodeAt(0)).buffer;
@@ -81,6 +112,8 @@ export class XzReadableStream extends ReadableStream {
 
         super({
             async start(controller) {
+                await XzReadableStream._contextMutex.acquire();
+
                 if (!XzReadableStream._moduleInstance) {
                     await (XzReadableStream._moduleInstancePromise || (XzReadableStream._moduleInstancePromise = XzReadableStream._getModuleInstance()));
                 }
@@ -105,12 +138,14 @@ export class XzReadableStream extends ReadableStream {
                 xzContext.resetOutputBuffer();
 
                 if (nextOutputResult.finished) {
-                    xzContext.dispose(); // Not sure if this always happens
+                    xzContext.dispose();
+                    XzReadableStream._contextMutex.release();
                     controller.close();
                 }
             },
             cancel() {
-                xzContext.dispose(); // Not sure if this always happens
+                xzContext.dispose();
+                XzReadableStream._contextMutex.release();
                 return compressedReader.cancel();
             }
         });

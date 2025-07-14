@@ -9,10 +9,6 @@ jobs:
       matrix:
         node-version: [16.x, 18.x, 20.x, '*']
 
-    env:
-      WASI_VERSION: 14
-      WASI_SDK_PATH: /tmp/wasi-sdk
-
     steps:
       - uses: actions/checkout@v3
         with:
@@ -25,9 +21,7 @@ jobs:
 
       - name: Set up WASI-SDK
         run: |
-          wget https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_VERSION}/wasi-sdk-${WASI_VERSION}.0-linux.tar.gz
-          mkdir -p $WASI_SDK_PATH
-          tar xvf wasi-sdk-*-linux.tar.gz -C $WASI_SDK_PATH --strip-components=1
+          npm run setup-wasi-sdk
 
       - uses: actions/setup-node@v3
         with:
@@ -36,7 +30,7 @@ jobs:
       - run: npm install
 
       - name: Build & test
-        run: wasisdkroot=$WASI_SDK_PATH make && npm run test
+        run: make && npm run test
         env:
           # Legacy provider required for old webpack version in new Node releases:
           NODE_OPTIONS: ${{ matrix.node-version != '16.x' && '--openssl-legacy-provider' || '' }}
