@@ -114,39 +114,57 @@ export class XzReadableStream extends ReadableStream {
             async start(controller) {
                 await XzReadableStream._contextMutex.acquire();
 
-                if (!XzReadableStream._moduleInstance) {
-                    await (XzReadableStream._moduleInstancePromise || (XzReadableStream._moduleInstancePromise = XzReadableStream._getModuleInstance()));
+                try {
+                    if (!XzReadableStream._moduleInstance) {
+                        await (XzReadableStream._moduleInstancePromise || (XzReadableStream._moduleInstancePromise = XzReadableStream._getModuleInstance()));
+                    }
+                    xzContext = new XzContext(XzReadableStream._moduleInstance);
+                } catch (error) {
+                    XzReadableStream._contextMutex.release();
+                    throw error;
                 }
-                xzContext = new XzContext(XzReadableStream._moduleInstance);
             },
 
             async pull(controller) {
-                if (xzContext.needsMoreInput()) {
-                    if (unconsumedInput === null || unconsumedInput.byteLength === 0) {
-                        const { done, value } = await compressedReader.read();
-                        if (!done) {
-                            unconsumedInput = value;
+                try {
+                    if (xzContext.needsMoreInput()) {
+                        if (unconsumedInput === null || unconsumedInput.byteLength === 0) {
+                            const { done, value } = await compressedReader.read();
+                            if (!done) {
+                                unconsumedInput = value;
+                            }
                         }
+                        const nextInputLength = Math.min(xzContext.bufSize, unconsumedInput.byteLength);
+                        xzContext.supplyInput(unconsumedInput.subarray(0, nextInputLength));
+                        unconsumedInput = unconsumedInput.subarray(nextInputLength);
                     }
-                    const nextInputLength = Math.min(xzContext.bufSize, unconsumedInput.byteLength);
-                    xzContext.supplyInput(unconsumedInput.subarray(0, nextInputLength));
-                    unconsumedInput = unconsumedInput.subarray(nextInputLength);
-                }
 
-                const nextOutputResult = xzContext.getNextOutput();
-                controller.enqueue(nextOutputResult.outChunk);
-                xzContext.resetOutputBuffer();
+                    const nextOutputResult = xzContext.getNextOutput();
+                    controller.enqueue(nextOutputResult.outChunk);
+                    xzContext.resetOutputBuffer();
 
-                if (nextOutputResult.finished) {
-                    xzContext.dispose();
+                    if (nextOutputResult.finished) {
+                        xzContext.dispose();
+                        XzReadableStream._contextMutex.release();
+                        controller.close();
+                    }
+                } catch (error) {
+                    if (xzContext) {
+                        xzContext.dispose();
+                    }
                     XzReadableStream._contextMutex.release();
-                    controller.close();
+                    throw error;
                 }
             },
             cancel() {
-                xzContext.dispose();
-                XzReadableStream._contextMutex.release();
-                return compressedReader.cancel();
+                try {
+                    if (xzContext) {
+                        xzContext.dispose();
+                    }
+                    return compressedReader.cancel();
+                } finally {
+                    XzReadableStream._contextMutex.release();
+                }
             }
         });
     }
