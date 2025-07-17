@@ -63,9 +63,40 @@ class XzContext {
     }
 }
 
+// Simple mutex to serialize context creation and prevent resource exhaustion
+class ContextMutex {
+    constructor() {
+        this.locked = false;
+        this.waitQueue = [];
+    }
+
+    async acquire() {
+        if (!this.locked) {
+            this.locked = true;
+            return;
+        }
+
+        // Wait in queue
+        return new Promise((resolve) => {
+            this.waitQueue.push(resolve);
+        });
+    }
+
+    release() {
+        if (this.waitQueue.length > 0) {
+            const next = this.waitQueue.shift();
+            next();
+        } else {
+            this.locked = false;
+        }
+    }
+}
+
 export class XzReadableStream extends ReadableStream {
     static _moduleInstancePromise;
     static _moduleInstance;
+    static _contextMutex = new ContextMutex();
+
     static async _getModuleInstance() {
         const base64Wasm = xzwasmBytes.replace('data:application/wasm;base64,', '');
         const wasmBytes = Uint8Array.from(atob(base64Wasm), c => c.charCodeAt(0)).buffer;
@@ -81,37 +112,59 @@ export class XzReadableStream extends ReadableStream {
 
         super({
             async start(controller) {
-                if (!XzReadableStream._moduleInstance) {
-                    await (XzReadableStream._moduleInstancePromise || (XzReadableStream._moduleInstancePromise = XzReadableStream._getModuleInstance()));
+                await XzReadableStream._contextMutex.acquire();
+
+                try {
+                    if (!XzReadableStream._moduleInstance) {
+                        await (XzReadableStream._moduleInstancePromise || (XzReadableStream._moduleInstancePromise = XzReadableStream._getModuleInstance()));
+                    }
+                    xzContext = new XzContext(XzReadableStream._moduleInstance);
+                } catch (error) {
+                    XzReadableStream._contextMutex.release();
+                    throw error;
                 }
-                xzContext = new XzContext(XzReadableStream._moduleInstance);
             },
 
             async pull(controller) {
-                if (xzContext.needsMoreInput()) {
-                    if (unconsumedInput === null || unconsumedInput.byteLength === 0) {
-                        const { done, value } = await compressedReader.read();
-                        if (!done) {
-                            unconsumedInput = value;
+                try {
+                    if (xzContext.needsMoreInput()) {
+                        if (unconsumedInput === null || unconsumedInput.byteLength === 0) {
+                            const { done, value } = await compressedReader.read();
+                            if (!done) {
+                                unconsumedInput = value;
+                            }
                         }
+                        const nextInputLength = Math.min(xzContext.bufSize, unconsumedInput.byteLength);
+                        xzContext.supplyInput(unconsumedInput.subarray(0, nextInputLength));
+                        unconsumedInput = unconsumedInput.subarray(nextInputLength);
                     }
-                    const nextInputLength = Math.min(xzContext.bufSize, unconsumedInput.byteLength);
-                    xzContext.supplyInput(unconsumedInput.subarray(0, nextInputLength));
-                    unconsumedInput = unconsumedInput.subarray(nextInputLength);
-                }
 
-                const nextOutputResult = xzContext.getNextOutput();
-                controller.enqueue(nextOutputResult.outChunk);
-                xzContext.resetOutputBuffer();
+                    const nextOutputResult = xzContext.getNextOutput();
+                    controller.enqueue(nextOutputResult.outChunk);
+                    xzContext.resetOutputBuffer();
 
-                if (nextOutputResult.finished) {
-                    xzContext.dispose(); // Not sure if this always happens
-                    controller.close();
+                    if (nextOutputResult.finished) {
+                        xzContext.dispose();
+                        XzReadableStream._contextMutex.release();
+                        controller.close();
+                    }
+                } catch (error) {
+                    if (xzContext) {
+                        xzContext.dispose();
+                    }
+                    XzReadableStream._contextMutex.release();
+                    throw error;
                 }
             },
             cancel() {
-                xzContext.dispose(); // Not sure if this always happens
-                return compressedReader.cancel();
+                try {
+                    if (xzContext) {
+                        xzContext.dispose();
+                    }
+                    return compressedReader.cancel();
+                } finally {
+                    XzReadableStream._contextMutex.release();
+                }
             }
         });
     }

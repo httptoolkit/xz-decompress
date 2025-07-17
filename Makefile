@@ -2,15 +2,10 @@ xzdir := module/xz-embedded
 xzlibdir := $(xzdir)/linux/lib/xz
 
 ifeq ($(wasisdkroot),)
-  $(error wasisdkroot is not set)
+	wasisdkroot := wasi-sdk
 endif
 
-ifeq ($(shell grep -o WSL2 /proc/version ),WSL2)
-	# Runs a lot faster for me
-	webpackcommand := cmd.exe /c npm run webpack
-else
-	webpackcommand := npm run webpack
-endif
+webpackcommand := node_modules/.bin/webpack
 
 .PHONY: all clean sample run-sample package
 
@@ -64,6 +59,6 @@ run-sample:
 clean:
 	rm -rf dist
 	rm -rf sample/lib
-	rm sample/data/random*
-	rm sample/data/sample.wasm.xz
-	rm sample/data/sample.wasm-brotli.br
+	rm -f sample/data/random*
+	rm -f sample/data/sample.wasm.xz
+	rm -f sample/data/sample.wasm-brotli.br
