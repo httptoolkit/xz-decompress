@@ -5,6 +5,15 @@ const ReadableStream = globalThis.ReadableStream
     // This won't be reached in modern browsers, and bundlers will ignore due to 'browser' field in package.json:
     || require('stream/web').ReadableStream;
 
+// Try to compile the wasm module eagerly at import time. This fails in runtimes
+// like Cloudflare Workers that block WebAssembly.compile entirely; those runtimes
+// must call XzReadableStream.setWasmModule() with a pre-compiled module instead.
+let _wasmModulePromise = (async () => {
+    const base64Wasm = xzwasmBytes.replace('data:application/wasm;base64,', '');
+    const wasmBytes = Uint8Array.from(atob(base64Wasm), c => c.charCodeAt(0)).buffer;
+    return WebAssembly.compile(wasmBytes);
+})().catch(() => null);
+
 const XZ_OK = 0;
 const XZ_STREAM_END = 1;
 
@@ -97,35 +106,67 @@ export class XzReadableStream extends ReadableStream {
     static _moduleInstance;
     static _contextMutex = new ContextMutex();
 
+    /**
+     * Provide a pre-compiled WebAssembly.Module for runtimes that block
+     * dynamic compilation (e.g. Cloudflare Workers).
+     */
+    static setWasmModule(wasmModule) {
+        _wasmModulePromise = Promise.resolve(wasmModule);
+        XzReadableStream._moduleInstance = null;
+        XzReadableStream._moduleInstancePromise = null;
+    }
+
     static async _getModuleInstance() {
-        const base64Wasm = xzwasmBytes.replace('data:application/wasm;base64,', '');
-        const wasmBytes = Uint8Array.from(atob(base64Wasm), c => c.charCodeAt(0)).buffer;
-        const wasmOptions = {};
-        const module = await WebAssembly.instantiate(wasmBytes, wasmOptions);
-        XzReadableStream._moduleInstance = module.instance;
+        const compiledModule = await _wasmModulePromise;
+        if (!compiledModule) {
+            throw new Error(
+                'WebAssembly compilation is not available in this runtime. ' +
+                'Call XzReadableStream.setWasmModule(module) with a pre-compiled WebAssembly.Module before use.'
+            );
+        }
+        XzReadableStream._moduleInstance = await WebAssembly.instantiate(compiledModule);
     }
 
     constructor(compressedStream) {
         let xzContext;
         let unconsumedInput = null;
+        let finalized = false;
+        let initError = null;
         const compressedReader = compressedStream.getReader();
 
-        super({
-            async start(controller) {
-                await XzReadableStream._contextMutex.acquire();
+        function finalizeOnce() {
+            if (finalized) return;
+            finalized = true;
+            if (xzContext) {
+                xzContext.dispose();
+                xzContext = null;
+            }
+            XzReadableStream._contextMutex.release();
+        }
 
-                try {
-                    if (!XzReadableStream._moduleInstance) {
-                        await (XzReadableStream._moduleInstancePromise || (XzReadableStream._moduleInstancePromise = XzReadableStream._getModuleInstance()));
-                    }
-                    xzContext = new XzContext(XzReadableStream._moduleInstance);
-                } catch (error) {
-                    XzReadableStream._contextMutex.release();
-                    throw error;
+        const initPromise = (async () => {
+            await XzReadableStream._contextMutex.acquire();
+            try {
+                if (!XzReadableStream._moduleInstance) {
+                    await (XzReadableStream._moduleInstancePromise || (XzReadableStream._moduleInstancePromise = XzReadableStream._getModuleInstance()));
                 }
+                xzContext = new XzContext(XzReadableStream._moduleInstance);
+            } catch (error) {
+                initError = error;
+                XzReadableStream._contextMutex.release();
+            }
+        })();
+
+        super({
+            async start() {
+                await initPromise;
+                if (initError) throw initError;
             },
 
             async pull(controller) {
+                await initPromise;
+                if (initError) throw initError;
+
                 try {
                     if (xzContext.needsMoreInput()) {
                         if (unconsumedInput === null || unconsumedInput.byteLength === 0) {
@@ -144,26 +185,20 @@ export class XzReadableStream extends ReadableStream {
                     xzContext.resetOutputBuffer();
 
                     if (nextOutputResult.finished) {
-                        xzContext.dispose();
-                        XzReadableStream._contextMutex.release();
+                        finalizeOnce();
                         controller.close();
                     }
                 } catch (error) {
-                    if (xzContext) {
-                        xzContext.dispose();
-                    }
-                    XzReadableStream._contextMutex.release();
+                    finalizeOnce();
                     throw error;
                 }
             },
-            cancel() {
+            async cancel() {
+                await initPromise;
                 try {
-                    if (xzContext) {
-                        xzContext.dispose();
-                    }
                     return compressedReader.cancel();
                 } finally {
-                    XzReadableStream._contextMutex.release();
+                    finalizeOnce();
                 }
             }
         });

@@ -50,6 +50,7 @@
   },
   "files": [
     "dist/package/**",
+    "dist/native/xz-decompress.wasm",
     "types.d.ts"
   ]
 }

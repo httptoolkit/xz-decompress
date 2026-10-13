@@ -40,6 +40,43 @@ The API is designed to be as JavaScript-standard as possible, so `XzReadableStre
 
 If you're using this to decompress content from a file or other source, rather than an HTTP response body, you'll need to get a `ReadableStream` (a web stream) for the file's data to replace the `compressedResponse.body` stream above. For example, in Node.js you could use `Readable.toWeb(fs.createReadStream(filename))` to stream from the disk, or `new Blob([buffer]).stream()` if you already have the data in a `Buffer`.
 
+## Cloudflare Workers & other restricted runtimes
+
+Some runtimes disallow dynamic wasm compilation from bytes at runtime (for example, Cloudflare Workers).
+
+To support these environments, you can provide a pre-compiled `WebAssembly.Module` with `XzReadableStream.setWasmModule(...)` once at startup, before creating any `XzReadableStream` instances.
+
+### Cloudflare Workers example
+
+```js
+import { XzReadableStream } from 'xz-decompress';
+import xzWasmModule from 'xz-decompress/dist/native/xz-decompress.wasm';
+
+// Call once during startup/module initialization:
+XzReadableStream.setWasmModule(xzWasmModule);
+
+export default {
+   async fetch(request) {
+      const compressedResponse = await fetch('https://example.com/somefile.xz');
+      return new Response(new XzReadableStream(compressedResponse.body));
+   }
+};
+```
+
+### Generic runtime pattern
+
+If your runtime/bundler gives you a `WebAssembly.Module` from a static `.wasm` import, pass it to `setWasmModule` in the same way.
+
+If your runtime only gives you bytes or a URL, you may need to compile yourself:
+
+```js
+const wasmBytes = await fetch(wasmUrl).then((r) => r.arrayBuffer());
+const wasmModule = await WebAssembly.compile(wasmBytes);
+XzReadableStream.setWasmModule(wasmModule);
+```
+
+Note: this fallback only works where `WebAssembly.compile(...)` is allowed by the runtime.
+
 ## What about `.tar.xz` files?
 
 Since the `.xz` format only represents one file, it's common for people to bundle up a collection of files as `.tar`, and then compress this to `.tar.xz`.

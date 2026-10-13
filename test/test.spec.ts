@@ -1,5 +1,7 @@
 import { ReadableStream as NodeReadableStream } from 'stream/web';
 import { expect } from 'chai';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 
 import { XzReadableStream  } from "..";
 
@@ -140,6 +142,189 @@ describe("Streaming XS decompression", () => {
         const validStream = new XzReadableStream(validDataStream);
 
         const result = await collectOutputString(validStream);
+        expect(result).to.equal('hello world\n');
+    });
+
+    it("handles early pull before initialization completes", async () => {
+        const dataStream = buildStaticDataStream(Buffer.from(HELLO_WORLD_XZ, 'base64'));
+        const stream = new XzReadableStream(dataStream);
+
+        // Immediately call reader.read() without waiting for start to settle
+        const reader = stream.getReader();
+        const { value, done } = await reader.read();
+
+        expect(done).to.be.false;
+        expect(value).to.be.instanceOf(Uint8Array);
+
+        // Read remaining
+        let result = new TextDecoder().decode(value);
+        while (true) {
+            const { value: chunk, done: finished } = await reader.read();
+            if (finished) break;
+            result += new TextDecoder().decode(chunk);
+        }
+        expect(result).to.equal('hello world\n');
+    });
+
+    it("handles concurrent reads queued during initialization", async () => {
+        const dataStream = buildStaticDataStream(Buffer.from(HELLO_WORLD_XZ, 'base64'));
+        const stream = new XzReadableStream(dataStream);
+        const reader = stream.getReader();
+
+        // Queue multiple reads immediately (before init can finish)
+        const read1 = reader.read();
+        const read2 = reader.read();
+        const read3 = reader.read();
+
+        const results = await Promise.all([read1, read2, read3]);
+
+        // At least the first should have data, stream may close within these reads
+        const hasData = results.some(r => !r.done && r.value && r.value.byteLength > 0);
+        expect(hasData).to.be.true;
+
+        reader.releaseLock();
+    });
+
+    it("cancel during initialization does not deadlock", async () => {
+        const dataStream = buildStaticDataStream(Buffer.from(HELLO_WORLD_XZ, 'base64'));
+        const stream = new XzReadableStream(dataStream);
+        const reader = stream.getReader();
+
+        // Cancel immediately without reading
+        await reader.cancel();
+
+        // Next stream should still work (mutex released)
+        const validDataStream = buildStaticDataStream(Buffer.from(HELLO_WORLD_XZ, 'base64'));
+        const validStream = new XzReadableStream(validDataStream);
+        const result = await collectOutputString(validStream);
+        expect(result).to.equal('hello world\n');
+    });
+
+    it("initialization failure propagates to pull, not undefined-context errors", async () => {
+        // Temporarily break the module instance to force init failure
+        const originalPromise = (XzReadableStream as any)._moduleInstancePromise;
+        const originalInstance = (XzReadableStream as any)._moduleInstance;
+
+        (XzReadableStream as any)._moduleInstance = null;
+        (XzReadableStream as any)._moduleInstancePromise = Promise.reject(new Error('Simulated init failure'));
+        // Suppress unhandled rejection
+        (XzReadableStream as any)._moduleInstancePromise.catch(() => {});
+
+        const dataStream = buildStaticDataStream(Buffer.from(HELLO_WORLD_XZ, 'base64'));
+        const stream = new XzReadableStream(dataStream);
+
+        try {
+            await collectOutputString(stream);
+            expect.fail('Expected stream to throw');
+        } catch (error: any) {
+            expect(error.message).to.equal('Simulated init failure');
+        }
+
+        // Restore original state
+        (XzReadableStream as any)._moduleInstancePromise = originalPromise;
+        (XzReadableStream as any)._moduleInstance = originalInstance;
+
+        // Subsequent streams should work
+        const validDataStream = buildStaticDataStream(Buffer.from(HELLO_WORLD_XZ, 'base64'));
+        const validStream = new XzReadableStream(validDataStream);
+        const result = await collectOutputString(validStream);
+        expect(result).to.equal('hello world\n');
+    });
+});
+
+describe("setWasmModule", () => {
+    const wasmPath = resolve(__dirname, '../dist/native/xz-decompress.wasm');
+
+    afterEach(() => {
+        // Reset to built-in module so other tests aren't affected
+        (XzReadableStream as any)._moduleInstance = null;
+        (XzReadableStream as any)._moduleInstancePromise = null;
+    });
+
+    it("works with a pre-compiled WebAssembly.Module", async () => {
+        const wasmBytes = readFileSync(wasmPath);
+        const wasmModule = await WebAssembly.compile(wasmBytes);
+
+        (XzReadableStream as any)._moduleInstance = null;
+        (XzReadableStream as any)._moduleInstancePromise = null;
+        XzReadableStream.setWasmModule(wasmModule);
+
+        const dataStream = buildStaticDataStream(Buffer.from(HELLO_WORLD_XZ, 'base64'));
+        const stream = new XzReadableStream(dataStream);
+        const result = await collectOutputString(stream);
+        expect(result).to.equal('hello world\n');
+    });
+
+    it("works for multiple sequential streams after setWasmModule", async () => {
+        const wasmBytes = readFileSync(wasmPath);
+        const wasmModule = await WebAssembly.compile(wasmBytes);
+
+        (XzReadableStream as any)._moduleInstance = null;
+        (XzReadableStream as any)._moduleInstancePromise = null;
+        XzReadableStream.setWasmModule(wasmModule);
+
+        for (let i = 0; i < 5; i++) {
+            const dataStream = buildStaticDataStream(Buffer.from(HELLO_WORLD_XZ, 'base64'));
+            const stream = new XzReadableStream(dataStream);
+            const result = await collectOutputString(stream);
+            expect(result).to.equal('hello world\n');
+        }
+    });
+
+    it("works for parallel streams after setWasmModule", async () => {
+        const wasmBytes = readFileSync(wasmPath);
+        const wasmModule = await WebAssembly.compile(wasmBytes);
+
+        (XzReadableStream as any)._moduleInstance = null;
+        (XzReadableStream as any)._moduleInstancePromise = null;
+        XzReadableStream.setWasmModule(wasmModule);
+
+        const promises = Array.from({ length: 10 }, () => {
+            const dataStream = buildStaticDataStream(Buffer.from(HELLO_WORLD_XZ, 'base64'));
+            return collectOutputString(new XzReadableStream(dataStream));
+        });
+
+        const results = await Promise.all(promises);
+        for (const result of results) {
+            expect(result).to.equal('hello world\n');
+        }
+    });
+
+    it("throws a clear error when no module is available", async () => {
+        (XzReadableStream as any)._moduleInstance = null;
+        (XzReadableStream as any)._moduleInstancePromise = null;
+        // Simulate a runtime where compile failed (null resolved)
+        XzReadableStream.setWasmModule(null as any);
+
+        const dataStream = buildStaticDataStream(Buffer.from(HELLO_WORLD_XZ, 'base64'));
+        const stream = new XzReadableStream(dataStream);
+
+        try {
+            await collectOutputString(stream);
+            expect.fail('Expected stream to throw');
+        } catch (error: any) {
+            expect(error.message).to.include('setWasmModule');
+        }
+    });
+
+    it("overrides a previously cached module instance", async () => {
+        const wasmBytes = readFileSync(wasmPath);
+        const wasmModule = await WebAssembly.compile(wasmBytes);
+
+        // First, populate _moduleInstance via setWasmModule
+        XzReadableStream.setWasmModule(wasmModule);
+        const dataStream1 = buildStaticDataStream(Buffer.from(HELLO_WORLD_XZ, 'base64'));
+        await collectOutputString(new XzReadableStream(dataStream1));
+        expect((XzReadableStream as any)._moduleInstance).to.not.be.null;
+
+        // Calling setWasmModule again should clear the cached instance
+        const wasmModule2 = await WebAssembly.compile(wasmBytes);
+        XzReadableStream.setWasmModule(wasmModule2);
+        expect((XzReadableStream as any)._moduleInstance).to.be.null;
+
+        // Should still work with the new module
+        const dataStream2 = buildStaticDataStream(Buffer.from(HELLO_WORLD_XZ, 'base64'));
+        const result = await collectOutputString(new XzReadableStream(dataStream2));
         expect(result).to.equal('hello world\n');
     });
 });
